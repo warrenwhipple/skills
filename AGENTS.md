@@ -4,7 +4,6 @@ This repository is the canonical home for Warren Whipple's personal agent skills
 
 ## Inventory
 
-- `decision-mode` — Structure complex goals and record decision progress in a DECISION file.
 - `mirror-check` — Check or create human-owned MIRROR files for drift and misunderstandings.
 - `yt-md` — Capture YouTube transcripts as safe Markdown and JSON artifacts.
 
