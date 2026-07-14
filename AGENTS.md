@@ -5,7 +5,7 @@ This repository is the canonical home for Warren Whipple's personal agent skills
 ## Inventory
 
 - `mirror-check` — Check or create human-owned MIRROR files for drift and misunderstandings.
-- `yt-md` — Capture YouTube transcripts as safe Markdown and JSON artifacts.
+- `yt-md` — Capture YouTube transcripts as Markdown with temporary safe-ingestion data.
 
 ## Conventions
 

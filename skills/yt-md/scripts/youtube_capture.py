@@ -5,9 +5,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
@@ -35,7 +38,7 @@ def parse_args() -> argparse.Namespace:
         "--out-dir",
         type=Path,
         required=True,
-        help="Directory for raw capture artifacts.",
+        help="Directory for the Markdown transcript and any retained JSON artifacts.",
     )
     parser.add_argument(
         "--allow-local-js",
@@ -58,7 +61,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--write-markdown",
         action="store_true",
-        help="Also write an ID-keyed Markdown transcript.",
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--keep-structured",
+        action="store_true",
+        help="Retain the normalized safe-ingestion JSON beside the Markdown transcript.",
+    )
+    parser.add_argument(
+        "--keep-raw",
+        action="store_true",
+        help="Retain raw yt-dlp metadata and caption JSON beside the Markdown transcript.",
     )
     parser.add_argument(
         "--target-seconds",
@@ -157,6 +170,27 @@ def load_json(path: Path) -> Any:
         return json.load(f)
 
 
+def atomic_write_text(path: Path, text: str) -> None:
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temp_file:
+            temp_path = Path(temp_file.name)
+            temp_file.write(text)
+            temp_file.flush()
+            os.fsync(temp_file.fileno())
+        temp_path.replace(path)
+    finally:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
+
+
 def select_caption_path(out_dir: Path, video_id: str, sub_format: str) -> Path:
     suffix = sub_format.split("/", 1)[0].split(",", 1)[0].strip() or "json3"
     candidates = [
@@ -193,8 +227,32 @@ def write_untrusted_json(info: dict[str, Any], captions: dict[str, Any], out_dir
         ],
     }
     path = out_dir / f"{video_id}.untrusted-youtube-transcript.json"
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    atomic_write_text(path, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
     return path
+
+
+def copy_raw_artifacts(
+    info_path: Path,
+    caption_paths: list[Path],
+    out_dir: Path,
+) -> list[Path]:
+    retained_paths: list[Path] = []
+    for source in [info_path, *caption_paths]:
+        destination = out_dir / source.name
+        with tempfile.NamedTemporaryFile(
+            dir=out_dir,
+            prefix=f".{destination.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temp_file:
+            temp_path = Path(temp_file.name)
+        try:
+            shutil.copy2(source, temp_path)
+            temp_path.replace(destination)
+        finally:
+            temp_path.unlink(missing_ok=True)
+        retained_paths.append(destination)
+    return retained_paths
 
 
 def write_markdown(
@@ -207,7 +265,7 @@ def write_markdown(
     video_id = str(info["id"])
     paragraphs = paragraphize(caption_rows(captions), target_seconds)
     path = out_dir / f"{video_id}.youtube-transcript.md"
-    path.write_text(markdown_for(info, paragraphs, width), encoding="utf-8")
+    atomic_write_text(path, markdown_for(info, paragraphs, width))
     return path
 
 
@@ -220,33 +278,71 @@ def main() -> int:
         return 2
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
+    untrusted_json_path: Path | None = None
+    markdown_path: Path | None = None
+    retained_raw_paths: list[Path] = []
+    temporary_structured_dir: Path | None = None
     try:
-        info = capture_info(url, args.out_dir, args.allow_local_js)
-        actual_video_id = str(info["id"])
-        if actual_video_id != expected_video_id:
-            raise RuntimeError(
-                f"yt-dlp returned video ID {actual_video_id}, expected {expected_video_id}"
+        with tempfile.TemporaryDirectory(prefix="yt-md-raw-") as raw_dir_name:
+            raw_dir = Path(raw_dir_name)
+            info = capture_info(url, raw_dir, args.allow_local_js)
+            actual_video_id = str(info["id"])
+            if actual_video_id != expected_video_id:
+                raise RuntimeError(
+                    f"yt-dlp returned video ID {actual_video_id}, expected {expected_video_id}"
+                )
+
+            capture_captions(url, raw_dir, args.allow_local_js, args.sub_langs, args.sub_format)
+            caption_path = select_caption_path(raw_dir, actual_video_id, args.sub_format)
+            captions = load_json(caption_path)
+            markdown_path = write_markdown(
+                info,
+                captions,
+                args.out_dir,
+                args.target_seconds,
+                args.width,
             )
 
-        capture_captions(url, args.out_dir, args.allow_local_js, args.sub_langs, args.sub_format)
-        caption_path = select_caption_path(args.out_dir, actual_video_id, args.sub_format)
-        captions = load_json(caption_path)
-        untrusted_json_path = write_untrusted_json(info, captions, args.out_dir)
+            if args.keep_structured:
+                structured_dir = args.out_dir
+            else:
+                temporary_structured_dir = Path(
+                    tempfile.mkdtemp(prefix=f"yt-md-{actual_video_id}-")
+                )
+                structured_dir = temporary_structured_dir
+            untrusted_json_path = write_untrusted_json(info, captions, structured_dir)
+
+            if args.keep_raw:
+                info_path = raw_dir / f"{actual_video_id}.info.json"
+                raw_caption_paths = sorted(
+                    path
+                    for path in raw_dir.glob(f"{actual_video_id}.*")
+                    if path != info_path
+                )
+                retained_raw_paths = copy_raw_artifacts(
+                    info_path,
+                    raw_caption_paths,
+                    args.out_dir,
+                )
     except subprocess.CalledProcessError as exc:
+        if temporary_structured_dir is not None:
+            shutil.rmtree(temporary_structured_dir, ignore_errors=True)
         print("error: yt-dlp failed", file=sys.stderr)
         if exc.stderr:
             print(exc.stderr.rstrip(), file=sys.stderr)
         return exc.returncode or 1
     except (OSError, RuntimeError, FileNotFoundError, json.JSONDecodeError) as exc:
+        if temporary_structured_dir is not None:
+            shutil.rmtree(temporary_structured_dir, ignore_errors=True)
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
-    print(args.out_dir / f"{actual_video_id}.info.json")
-    print(caption_path)
+    assert markdown_path is not None
+    assert untrusted_json_path is not None
+    print(markdown_path)
     print(untrusted_json_path)
-
-    if args.write_markdown:
-        print(write_markdown(info, captions, args.out_dir, args.target_seconds, args.width))
+    for retained_raw_path in retained_raw_paths:
+        print(retained_raw_path)
 
     return 0
 
