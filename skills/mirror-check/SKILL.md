@@ -1,6 +1,7 @@
 ---
 name: mirror-check
 description: Check or create a human-owned MIRROR.md or MIRROR-*.md for drift and misunderstandings. Use whenever the user says "check mirror", "check {particular} mirror", "mirror check", "new mirror", or similar.
+disable-model-invocation: true
 ---
 
 # mirror-check
