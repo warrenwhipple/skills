@@ -1,6 +1,7 @@
 ---
 name: yt-md
 description: Capture YouTube transcript as Markdown. Use when user asks for YouTube transcript or markdown.
+disable-model-invocation: true
 ---
 
 # YT Markdown
