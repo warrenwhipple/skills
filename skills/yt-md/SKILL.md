@@ -10,6 +10,8 @@ disable-model-invocation: true
 
 Use the bundled capture script. Do not call `yt-dlp` directly for normal use.
 
+Script paths below are relative to this skill's own directory, not the current workspace root. The skill is installed at different locations by different harnesses, for example `skills/yt-md/` in this repository, `.agents/skills/yt-md/` in a project checkout, and `~/.claude/skills/yt-md/` or `~/.agents/skills/yt-md/` when linked locally. Resolve `scripts/...` against the directory holding this `SKILL.md`.
+
 Default output policy:
 
 - If the user gives an explicit output filename, use it.
@@ -37,7 +39,7 @@ Never overwrite an unrelated existing file. If the inferred destination already 
 Run:
 
 ```bash
-python3 skills/yt-md/scripts/youtube_capture.py \
+python3 scripts/youtube_capture.py \
   "https://www.youtube.com/watch?v=VIDEO_ID" \
   -o youtube-transcripts
 ```
@@ -45,7 +47,7 @@ python3 skills/yt-md/scripts/youtube_capture.py \
 For this repo's Matt Pocock reference workflow, use the user-provided folder if specified, for example:
 
 ```bash
-python3 skills/yt-md/scripts/youtube_capture.py \
+python3 scripts/youtube_capture.py \
   "https://www.youtube.com/watch?v=VIDEO_ID" \
   -o topics/decision-flow/matt-pocock-refs
 ```
@@ -98,7 +100,7 @@ This compatibility mode still keeps `--no-remote-components`; it must not be use
 If raw `.info.json` and `.json3` files already exist, convert them to Markdown with:
 
 ```bash
-python3 skills/yt-md/scripts/youtube_json3_to_md.py \
+python3 scripts/youtube_json3_to_md.py \
   path/to/video.info.json \
   path/to/video.en-orig.json3 \
   -o path/to/output.md
