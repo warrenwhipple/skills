@@ -4,6 +4,7 @@ This repository is the canonical home for Warren Whipple's personal agent skills
 
 ## Inventory
 
+- `brew-upgrade` — Review outdated Homebrew packages as a decision sheet, then run and verify only the approved upgrades.
 - `mirror-check` — Check or create human-owned MIRROR files for drift and misunderstandings.
 - `yt-md` — Capture YouTube transcripts as Markdown with temporary safe-ingestion data.
 
