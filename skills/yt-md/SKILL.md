@@ -10,13 +10,13 @@ disable-model-invocation: true
 
 Use the bundled capture script. Do not call `yt-dlp` directly for normal use.
 
-Script paths below are relative to this skill's own directory, not the current workspace root. The skill is installed at different locations by different harnesses, for example `skills/yt-md/` in this repository, `.agents/skills/yt-md/` in a project checkout, and `~/.claude/skills/yt-md/` or `~/.agents/skills/yt-md/` when linked locally. Resolve `scripts/...` against the directory holding this `SKILL.md`.
+Script paths below are relative to this skill's own directory, not the current workspace root. Resolve `scripts/...` against the directory holding this `SKILL.md`.
 
 Default output policy:
 
 - If the user gives an explicit output filename, use it.
 - If the user gives a target directory, use it.
-- If the user does not give a target directory and the current workspace is the thinking repo, use `youtube-transcripts/` at the repo root.
+- If the user does not give a target directory and the workspace root has a `youtube-transcripts/` directory, use it.
 - If the user asks for throwaway analysis only, use a temp output directory and report that the Markdown artifact is temporary.
 - Leave only the Markdown transcript in the target directory unless the user explicitly asks to retain JSON.
 - Before capture, inspect the target directory and relevant subfolders for its organization and house style.
@@ -44,12 +44,12 @@ python3 scripts/youtube_capture.py \
   -o youtube-transcripts
 ```
 
-For this repo's Matt Pocock reference workflow, use the user-provided folder if specified, for example:
+When the user names a folder, pass it instead, for example:
 
 ```bash
 python3 scripts/youtube_capture.py \
   "https://www.youtube.com/watch?v=VIDEO_ID" \
-  -o topics/decision-flow/matt-pocock-refs
+  -o topics/example/refs
 ```
 
 By default, the script writes:

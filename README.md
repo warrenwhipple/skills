@@ -2,17 +2,21 @@
 
 Personal agent skills with one canonical copy per skill under `skills/`.
 
-## Install from GitHub
+## Install into a project
+
+Skills are installed per project repo and committed there.
 
 ```sh
-npx skills add warrenwhipple/skills
-gh skill install warrenwhipple/skills
+scripts/install-skills.sh path/to/project yt-md
+scripts/install-skills.sh --check path/to/project yt-md
 ```
 
-## Local links
+This copies each skill into `.agents/skills/<name>/` and links `.claude/skills -> ../.agents/skills` for Claude Code. Rerun it to update a copy.
 
-Run `scripts/link-skills.sh` to link each skill into both `~/.agents/skills/` and `~/.claude/skills/`. Existing real directories are moved to timestamped backups; unrelated installed skills remain in place.
+From GitHub, without a local checkout:
 
-The committed `.agents/skills` link points project-scoped tooling at the same canonical `skills/` directory.
+```sh
+npx skills add warrenwhipple/skills --skill yt-md
+```
 
 See [AGENTS.md](AGENTS.md) for the skill inventory and repository conventions.

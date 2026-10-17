@@ -4,7 +4,7 @@ Date: 2026-07-14
 
 ## Status
 
-Accepted
+Accepted. The local installation paragraph is superseded by [ADR 0002](0002-per-repo-install.md).
 
 ## Decision
 

@@ -17,10 +17,11 @@ This repository is the canonical home for Warren Whipple's personal agent skills
 - Keep each `SKILL.md` body below 500 lines; move overflow into `references/`.
 - See [`docs/manual-only-skills.md`](docs/manual-only-skills.md) when a skill must load only after explicit human invocation; it documents the supported harness metadata.
 
-## Harnesses
+## Installation
 
-- Neutral project tooling uses the committed `.agents/skills -> ../skills` link.
-- Zed, Codex CLI, OpenCode, and Cursor use per-skill links under `~/.agents/skills/`.
-- Claude Code uses per-skill links under `~/.claude/skills/`.
-- Run `scripts/link-skills.sh` to create or refresh local links without replacing third-party skills.
+- Install skills per project repo, not at the user level. See [ADR 0002](docs/adr/0002-per-repo-install.md).
+- Run `scripts/install-skills.sh <project-dir> <skill>...` to copy skills into `<project-dir>/.agents/skills/` and link `.claude/skills -> ../.agents/skills`.
+- Run `scripts/install-skills.sh --check <project-dir> <skill>...` to find installed copies that have drifted from this repo.
+- Keep docs and skills free of machine-specific paths and local folder layouts.
+- This repo's committed `.agents/skills -> ../skills` link exposes its own skills while working here.
 - Cowork and ChatGPT Work require cloud/plugin packaging. That packaging is deferred.
