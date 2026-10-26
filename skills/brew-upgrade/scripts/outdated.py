@@ -138,6 +138,23 @@ def direct_dependents(
     return {name: sorted(names) for name, names in dependents.items()}
 
 
+def new_cask_dependencies(
+    names: list[str], formula_index: dict[str, dict[str, Any]], warnings: list[str]
+) -> dict[str, list[str]]:
+    """Map each cask to formulae it would pull in that are not installed; cask dry runs omit these."""
+    if not names:
+        return {}
+    result = run(["brew", "deps", "--cask", "--for-each", *names])
+    if result.returncode != 0:
+        warnings.append(f"Could not list cask dependencies:\n{result.stderr.strip()}")
+        return {}
+    missing: dict[str, list[str]] = {}
+    for line in result.stdout.splitlines():
+        cask, _, deps = line.partition(":")
+        missing[cask.strip().rsplit("/", 1)[-1]] = sorted(dep for dep in deps.split() if dep not in formula_index)
+    return missing
+
+
 def runtime_dependencies(formula: dict[str, Any], formula_index: dict[str, dict[str, Any]]) -> set[str]:
     installed = formula.get("installed") or [{}]
     return {canonical(dep["full_name"], formula_index) for dep in installed[-1].get("runtime_dependencies") or []}
@@ -343,7 +360,9 @@ def collect(offline: bool) -> dict[str, Any]:
             }
         )
 
-    for entry in outdated.get("casks", []):
+    cask_entries = outdated.get("casks", [])
+    cask_new_deps = new_cask_dependencies([entry["name"] for entry in cask_entries], formula_index, warnings)
+    for entry in cask_entries:
         cask = cask_index.get(entry["name"], {})
         installed_version = (entry["installed_versions"] or [""])[-1]
         items.append(
@@ -360,6 +379,7 @@ def collect(offline: bool) -> dict[str, Any]:
                 "auto_updates": bool(cask.get("auto_updates")),
                 "version_latest": cask.get("version") == "latest",
                 "app_versions": app_versions(cask),
+                "new_dependencies": cask_new_deps.get(entry["name"].rsplit("/", 1)[-1], []),
                 "_tap_source": (cask.get("tap"), cask.get("ruby_source_path")),
             }
         )
@@ -399,6 +419,8 @@ def notes_for(item: dict[str, Any]) -> str:
             notes.append("self-updating")
         for version in item["app_versions"].values():
             notes.append(f"app {version}")
+        if item["new_dependencies"]:
+            notes.append("installs " + " ".join(item["new_dependencies"]))
     elif item["dependents"]:
         notes.append("← " + " ".join(item["dependents"]))
     else:
