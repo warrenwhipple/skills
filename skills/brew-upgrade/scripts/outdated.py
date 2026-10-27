@@ -139,9 +139,17 @@ def direct_dependents(
 
 
 def new_cask_dependencies(
-    names: list[str], formula_index: dict[str, dict[str, Any]], warnings: list[str]
+    names: list[str],
+    formula_index: dict[str, dict[str, Any]],
+    cask_index: dict[str, dict[str, Any]],
+    warnings: list[str],
 ) -> dict[str, list[str]]:
-    """Map each cask to formulae it would pull in that are not installed; cask dry runs omit these."""
+    """Map each cask to packages it would pull in that are not installed; cask dry runs omit these."""
+
+    def is_installed(dep: str) -> bool:
+        # Deps can be formulae or casks, printed short or tap-qualified.
+        return any(key in index for key in (dep, dep.rsplit("/", 1)[-1]) for index in (formula_index, cask_index))
+
     if not names:
         return {}
     result = run(["brew", "deps", "--cask", "--for-each", *names])
@@ -151,7 +159,7 @@ def new_cask_dependencies(
     missing: dict[str, list[str]] = {}
     for line in result.stdout.splitlines():
         cask, _, deps = line.partition(":")
-        missing[cask.strip().rsplit("/", 1)[-1]] = sorted(dep for dep in deps.split() if dep not in formula_index)
+        missing[cask.strip().rsplit("/", 1)[-1]] = sorted(dep for dep in deps.split() if not is_installed(dep))
     return missing
 
 
@@ -361,7 +369,9 @@ def collect(offline: bool) -> dict[str, Any]:
         )
 
     cask_entries = outdated.get("casks", [])
-    cask_new_deps = new_cask_dependencies([entry["name"] for entry in cask_entries], formula_index, warnings)
+    cask_new_deps = new_cask_dependencies(
+        [entry["name"] for entry in cask_entries], formula_index, cask_index, warnings
+    )
     for entry in cask_entries:
         cask = cask_index.get(entry["name"], {})
         installed_version = (entry["installed_versions"] or [""])[-1]
