@@ -33,8 +33,9 @@ Do not loop over `brew uses` or the GitHub API yourself; the script batches thos
   - `name` is the full name for tap packages (`stablyai/orca/orca`); always use it in commands, because short tokens can resolve to a different package
   - `bump` is `major`, `minor`, `patch`, `revision` (a rebuild of the same upstream version), or `other`
   - `recipe_updated_at` / `recipe_age_days` give the last commit to the formula or cask file. The release was published no later than that commit, so recipe age is a lower bound on release age: an old recipe means an old release, but a young recipe can still point to an older release that the tap picked up late.
-  - formulae: `dependents` (installed packages that declare it directly), `installed_on_request`, and the coupling fields `outdated_dependencies` / `outdated_dependents`. Homebrew upgrades a formula's outdated dependencies with it and then upgrades its outdated dependents.
-  - casks: `auto_updates`, `version_latest`, `app_versions` (what the installed app bundle reports, which shows whether the app already updated itself), and `new_dependencies` (formulae or casks the cask would install that are not installed yet; the cask dry run does not list them)
+  - `new_dependencies` — packages the new version would install that are not installed yet, read from the current recipe
+  - formulae: `dependents` (installed packages that declare it directly), `installed_on_request`, and the coupling fields `outdated_dependencies` (from the new recipe, so they include deps the new version adds) / `outdated_dependents`. Homebrew upgrades a formula's outdated dependencies with it and then upgrades its outdated dependents.
+  - casks: `auto_updates`, `version_latest`, and `app_versions` (what the installed app bundle reports, which shows whether the app already updated itself)
 - `taps_fetched_at` — local git taps refresh only on `brew update`; core metadata refreshes automatically
 - `warnings` — unknown ages, GitHub fallbacks, brew stderr
 
@@ -46,7 +47,7 @@ Give every package exactly one suggestion:
 
 - **upgrade** — nothing stands out
 - **wait** — younger than the cooldown. If the recipe is young but the release might be older, say so; check the release date only when the user asks.
-- **look** — needs a human look first: a `major` bump, a cask with `new_dependencies`, a package with a host guide, deprecated or disabled, a security-sensitive library with many dependents, or anything surprising. State the reason in a few words.
+- **look** — needs a human look first: a `major` bump, a package with `new_dependencies`, a package with a host guide, deprecated or disabled, a security-sensitive library with many dependents, or anything surprising. State the reason in a few words.
 - **skip** — pinned, or a self-updating cask whose `app_versions` already matches `current_version` (the brew record just lags behind the app)
 
 Treat coupled packages as one decision. If the user approves one member and skips another, Homebrew will still pull the skipped one in, so flag that.
@@ -96,7 +97,7 @@ HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 brew upgrade --dry-run -
 
 `HOMEBREW_NO_AUTO_UPDATE=1` keeps the metadata from moving between the sheet, the dry run, and the install. `HOMEBREW_NO_INSTALL_CLEANUP=1` keeps previous versions available for rollback.
 
-Compare the dry run with the decisions. Every package it lists must be approved and at the sheet's `current_version`. If it adds a package (a coupled dependency or dependent) or shows a different version, stop and show the difference instead of running the upgrade. A cask dry run never lists the packages a cask depends on, so for casks also check the sheet's `new_dependencies`: if any were not part of the approval, stop and ask.
+Compare the dry run with the decisions. Every package it lists must be approved and at the sheet's `current_version`. If it adds a package (a coupled dependency or dependent, or a `Would install` dependency the sheet did not show) or shows a different version, stop and show the difference instead of running the upgrade. A cask dry run never lists the packages a cask depends on, so for casks also check the sheet's `new_dependencies`: if any were not part of the approval, stop and ask.
 
 When the dry run matches, run the same commands without `--dry-run`. Then:
 

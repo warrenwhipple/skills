@@ -138,13 +138,14 @@ def direct_dependents(
     return {name: sorted(names) for name, names in dependents.items()}
 
 
-def new_cask_dependencies(
+def new_dependencies(
     names: list[str],
+    kind: str,
     formula_index: dict[str, dict[str, Any]],
     cask_index: dict[str, dict[str, Any]],
     warnings: list[str],
 ) -> dict[str, list[str]]:
-    """Map each cask to packages it would pull in that are not installed; cask dry runs omit these."""
+    """Map each package to packages its current recipe would pull in that are not installed."""
 
     def is_installed(dep: str) -> bool:
         # Deps can be formulae or casks, printed short or tap-qualified.
@@ -152,15 +153,32 @@ def new_cask_dependencies(
 
     if not names:
         return {}
-    result = run(["brew", "deps", "--cask", "--for-each", *names])
+    # For installed formulae, plain `brew deps` reports the old keg's runtime deps; `--missing` reads the
+    # current recipe. Cask dry runs omit these deps entirely.
+    flags = ["--formula", "--missing"] if kind == "formula" else ["--cask"]
+    result = run(["brew", "deps", *flags, "--for-each", *names])
     if result.returncode != 0:
-        warnings.append(f"Could not list cask dependencies:\n{result.stderr.strip()}")
+        warnings.append(f"Could not list {kind} dependencies:\n{result.stderr.strip()}")
         return {}
     missing: dict[str, list[str]] = {}
     for line in result.stdout.splitlines():
-        cask, _, deps = line.partition(":")
-        missing[cask.strip().rsplit("/", 1)[-1]] = sorted(dep for dep in deps.split() if not is_installed(dep))
+        package, _, deps = line.partition(":")
+        missing[package.strip().rsplit("/", 1)[-1]] = sorted(dep for dep in deps.split() if not is_installed(dep))
     return missing
+
+
+def recipe_dependencies(formula: dict[str, Any], formula_index: dict[str, dict[str, Any]]) -> set[str]:
+    """Installed formulae the current recipe depends on, recursively; unlike the keg, it sees deps a new version adds."""
+    found: set[str] = set()
+    stack = [formula]
+    while stack:
+        current = stack.pop()
+        for dep in current.get("dependencies", []) + current.get("recommended_dependencies", []):
+            dep_formula = formula_index.get(dep) or formula_index.get(dep.rsplit("/", 1)[-1])
+            if dep_formula and dep_formula["full_name"] not in found:
+                found.add(dep_formula["full_name"])
+                stack.append(dep_formula)
+    return found
 
 
 def runtime_dependencies(formula: dict[str, Any], formula_index: dict[str, dict[str, Any]]) -> set[str]:
@@ -339,10 +357,20 @@ def collect(offline: bool) -> dict[str, Any]:
     dependents = direct_dependents(formulae, casks, formula_index)
 
     outdated_formula_names = {canonical(entry["name"], formula_index) for entry in outdated.get("formulae", [])}
+    # Homebrew upgrades the new recipe's outdated deps first, then outdated dependents of the installed kegs.
     runtime = {formula["full_name"]: runtime_dependencies(formula, formula_index) for formula in formulae}
+    recipe = {
+        name: recipe_dependencies(formula_index[name], formula_index)
+        for name in outdated_formula_names
+        if name in formula_index
+    }
 
+    formula_entries = outdated.get("formulae", [])
+    formula_new_deps = new_dependencies(
+        [entry["name"] for entry in formula_entries], "formula", formula_index, cask_index, warnings
+    )
     items: list[dict[str, Any]] = []
-    for entry in outdated.get("formulae", []):
+    for entry in formula_entries:
         formula = formula_index.get(entry["name"], {})
         name = formula.get("full_name", entry["name"])
         installed_version = (entry["installed_versions"] or [""])[-1]
@@ -360,17 +388,18 @@ def collect(offline: bool) -> dict[str, Any]:
                 "tap": formula.get("tap"),
                 "installed_on_request": records[-1].get("installed_on_request"),
                 "dependents": dependents.get(name, []),
-                "outdated_dependencies": sorted(runtime.get(name, set()) & outdated_formula_names),
+                "outdated_dependencies": sorted(recipe.get(name, set()) & outdated_formula_names),
                 "outdated_dependents": sorted(
                     other for other in outdated_formula_names if name in runtime.get(other, set())
                 ),
+                "new_dependencies": formula_new_deps.get(entry["name"].rsplit("/", 1)[-1], []),
                 "_tap_source": (formula.get("tap"), formula.get("ruby_source_path")),
             }
         )
 
     cask_entries = outdated.get("casks", [])
-    cask_new_deps = new_cask_dependencies(
-        [entry["name"] for entry in cask_entries], formula_index, cask_index, warnings
+    cask_new_deps = new_dependencies(
+        [entry["name"] for entry in cask_entries], "cask", formula_index, cask_index, warnings
     )
     for entry in cask_entries:
         cask = cask_index.get(entry["name"], {})
@@ -429,12 +458,12 @@ def notes_for(item: dict[str, Any]) -> str:
             notes.append("self-updating")
         for version in item["app_versions"].values():
             notes.append(f"app {version}")
-        if item["new_dependencies"]:
-            notes.append("installs " + " ".join(item["new_dependencies"]))
     elif item["dependents"]:
         notes.append("← " + " ".join(item["dependents"]))
     else:
         notes.append("top level")
+    if item["new_dependencies"]:
+        notes.append("installs " + " ".join(item["new_dependencies"]))
     if item.get("outdated_dependencies") or item.get("outdated_dependents"):
         coupled = sorted(set(item["outdated_dependencies"]) | set(item["outdated_dependents"]))
         notes.append("with " + " ".join(coupled))
